@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Stronghold Defense</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            background: #1a1a1a;
+            color: #fff;
+            font-family: Arial, sans-serif;
+        }
+
+        #gameContainer {
+            display: flex;
+            gap: 20px;
+        }
+
+        #gameCanvas {
+            border: 2px solid #444;
+            background: #222;
+        }
+
+        #sidebar {
+            width: 200px;
+            padding: 10px;
+            background: #333;
+            border-radius: 5px;
+        }
+
+        .tower-option {
+            margin: 10px 0;
+            padding: 10px;
+            background: #444;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .tower-option:hover {
+            background: #555;
+        }
+
+        #gameStats {
+            margin-top: 20px;
+            padding: 10px;
+            background: #444;
+            border-radius: 5px;
+        }
+
+        .selected {
+            border: 2px solid #4CAF50;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        <div id="sidebar">
+            <h2>Towers</h2>
+            <div class="tower-option" data-type="basic">
+                Basic Tower ($100)
+                <br>Balanced damage and range
+            </div>
+            <div class="tower-option" data-type="sniper">
+                Sniper Tower ($150)
+                <br>High damage, slow rate
+            </div>
+            <div class="tower-option" data-type="rapid">
+                Rapid Tower ($200)
+                <br>Fast attack, low damage
+            </div>
+            <div class="tower-option" data-type="splash">
+                Splash Tower ($250)
+                <br>Area damage
+            </div>
+            <div id="gameStats">
+                <div>Wave: <span id="waveCount">1</span></div>
+                <div>Money: $<span id="money">400</span></div>
+                <div>Lives: <span id="lives">20</span></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class Game {
+            constructor() {
+                this.canvas = document.getElementById('gameCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.money = 400;
+                this.lives = 20;
+                this.wave = 1;
+                this.towers = [];
+                this.enemies = [];
+                this.projectiles = [];
+                this.selectedTower = null;
+                this.path = [
+                    {x: 0, y: 300},
+                    {x: 200, y: 300},
+                    {x: 200, y: 100},
+                    {x: 600, y: 100},
+                    {x: 600, y: 500},
+                    {x: 800, y: 500}
+                ];
+                this.towerSpots = [
+                    {x: 150, y: 200}, {x: 150, y: 400},
+                    {x: 300, y: 200}, {x: 300, y: 400},
+                    {x: 450, y: 200}, {x: 450, y: 400},
+                    {x: 650, y: 200}, {x: 650, y: 400}
+                ];
+                this.waveInProgress = false;
+                this.setupEventListeners();
+                this.gameLoop();
+            }
+
+            setupEventListeners() {
+                const towerOptions = document.querySelectorAll('.tower-option');
+                towerOptions.forEach(option => {
+                    option.addEventListener('click', () => {
+                        this.selectedTower = option.dataset.type;
+                        towerOptions.forEach(opt => opt.classList.remove('selected'));
+                        option.classList.add('selected');
+                    });
+                });
+
+                this.canvas.addEventListener('click', (e) => {
+                    const rect = this.canvas.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const y = e.clientY - rect.top;
+                    this.handleCanvasClick(x, y);
+                });
+            }
+
+            handleCanvasClick(x, y) {
+                if (!this.selectedTower) return;
+
+                const spot = this.towerSpots.find(spot => 
+                    Math.hypot(spot.x - x, spot.y - y) < 30
+                );
+
+                if (spot && !this.towers.find(t => t.x === spot.x && t.y === spot.y)) {
+                    const cost = this.getTowerCost(this.selectedTower);
+                    if (this.money >= cost) {
+                        this.money -= cost;
+                        this.towers.push(new Tower(spot.x, spot.y, this.selectedTower));
+                        this.updateStats();
+                    }
+                }
+            }
+
+            getTowerCost(type) {
+                const costs = {
+                    basic: 100,
+                    sniper: 150,
+                    rapid: 200,
+                    splash: 250
+                };
+                return costs[type];
+            }
+
+            spawnWave() {
+                if (this.waveInProgress) return;
+                this.waveInProgress = true;
+                let enemiesSpawned = 0;
+                const totalEnemies = 5 + this.wave * 2;
+
+                const spawnInterval = setInterval(() => {
+                    if (enemiesSpawned >= totalEnemies) {
+                        clearInterval(spawnInterval);
+                        this.waveInProgress = false;
+                        return;
+                    }
+                    this.enemies.push(new Enemy(this.path, this.wave));
+                    enemiesSpawned++;
+                }, 1000);
+            }
+
+            updateStats() {
+                document.getElementById('money').textContent = this.money;
+                document.getElementById('lives').textContent = this.lives;
+                document.getElementById('waveCount').textContent = this.wave;
+            }
+
+            gameLoop() {
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                
+                // Draw path
+                this.ctx.beginPath();
+                this.ctx.moveTo(this.path[0].x, this.path[0].y);
+                this.path.forEach(point => {
+                    this.ctx.lineTo(point.x, point.y);
+                });
+                this.ctx.strokeStyle = '#666';
+                this.ctx.lineWidth = 40;
+                this.ctx.stroke();
+
+                // Draw tower spots
+                this.towerSpots.forEach(spot => {
+                    this.ctx.beginPath();
+                    this.ctx.arc(spot.x, spot.y, 20, 0, Math.PI * 2);
+                    this.ctx.fillStyle = '#444';
+                    this.ctx.fill();
+                });
+
+                // Update and draw towers
+                this.towers.forEach(tower => {
+                    tower.update(this.enemies, this.projectiles);
+                    tower.draw(this.ctx);
+                });
+
+                // Update and draw projectiles
+                this.projectiles = this.projectiles.filter(proj => {
+                    proj.update();
+                    proj.draw(this.ctx);
+                    return !proj.toRemove;
+                });
+
+                // Update and draw enemies
+                this.enemies = this.enemies.filter(enemy => {
+                    enemy.update();
+                    enemy.draw(this.ctx);
+                    
+                    if (enemy.reachedEnd) {
+                        this.lives--;
+                        this.updateStats();
+                        return false;
+                    }
+                    if (enemy.health <= 0) {
+                        this.money += 20;
+                        this.updateStats();
+                        return false;
+                    }
+                    return true;
+                });
+
+                // Check wave completion
+                if (!this.waveInProgress && this.enemies.length === 0) {
+                    this.wave++;
+                    this.money += 100;
+                    this.updateStats();
+                    this.spawnWave();
+                }
+
+                if (this.lives > 0) {
+                    requestAnimationFrame(() => this.gameLoop());
+                } else {
+                    alert('Game Over! You reached wave ' + this.wave);
+                }
+            }
+        }
+
+        class Tower {
+            constructor(x, y, type) {
+                this.x = x;
+                this.y = y;
+                this.type = type;
+                this.level = 1;
+                this.lastShot = 0;
+                
+                switch(type) {
+                    case 'basic':
+                        this.range = 150;
+                        this.damage = 20;
+                        this.fireRate = 1000;
+                        this.color = '#4CAF50';
+                        break;
+                    case 'sniper':
+                        this.range = 300;
+                        this.damage = 50;
+                        this.fireRate = 2000;
+                        this.color = '#2196F3';
+                        break;
+                    case 'rapid':
+                        this.range = 100;
+                        this.damage = 10;
+                        this.fireRate = 400;
+                        this.color = '#FFC107';
+                        break;
+                    case 'splash':
+                        this.range = 120;
+                        this.damage = 15;
+                        this.fireRate = 1500;
+                        this.color = '#9C27B0';
+                        break;
+                }
+            }
+
+            update(enemies, projectiles) {
+                if (Date.now() - this.lastShot >= this.fireRate) {
+                    const target = enemies.find(enemy => {
+                        const dist = Math.hypot(enemy.x - this.x, enemy.y - this.y);
+                        return dist <= this.range;
+                    });
+
+                    if (target) {
+                        projectiles.push(new Projectile(
+                            this.x, this.y,
+                            target,
+                            this.damage,
+                            this.type === 'splash'
+                        ));
+                        this.lastShot = Date.now();
+                    }
+                }
+            }
+
+            draw(ctx) {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, 20, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+
+                // Draw range circle
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.range, 0, Math.PI * 2);
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+                ctx.stroke();
+            }
+        }
+
+        class Enemy {
+            constructor(path, wave) {
+                this.path = path;
+                this.pathIndex = 0;
+                this.x = path[0].x;
+                this.y = path[0].y;
+                this.speed = 1 + wave * 0.1;
+                this.health = 50 + wave * 20;
+                this.maxHealth = this.health;
+                this.reachedEnd = false;
+            }
+
+            update() {
+                const target = this.path[this.pathIndex];
+                const dx = target.x - this.x;
+                const dy = target.y - this.y;
+                const distance = Math.hypot(dx, dy);
+
+                if (distance < this.speed) {
+                    this.pathIndex++;
+                    if (this.pathIndex >= this.path.length) {
+                        this.reachedEnd = true;
+                        return;
+                    }
+                } else {
+                    this.x += (dx / distance) * this.speed;
+                    this.y += (dy / distance) * this.speed;
+                }
+            }
+
+            draw(ctx) {
+                // Draw enemy
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, 15, 0, Math.PI * 2);
+                ctx.fillStyle = '#FF5252';
+                ctx.fill();
+
+                // Draw health bar
+                const healthPercentage = this.health / this.maxHealth;
+                ctx.fillStyle = '#000';
+                ctx.fillRect(this.x - 20, this.y - 25, 40, 5);
+                ctx.fillStyle = '#4CAF50';
+                ctx.fillRect(this.x - 20, this.y - 25, 40 * healthPercentage, 5);
+            }
+        }
+
+        class Projectile {
+            constructor(x, y, target, damage, splash = false) {
+                this.x = x;
+                this.y = y;
+                this.target = target;
+                this.speed = 5;
+                this.damage = damage;
+                this.splash = splash;
+                this.splashRadius = 50;
+                this.toRemove = false;
+            }
+
+            update() {
+                const dx = this.target.x - this.x;
+                const dy = this.target.y - this.y;
+                const distance = Math.hypot(dx, dy);
+
+                if (distance < this.speed) {
+                    if (this.splash) {
+                        game.enemies.forEach(enemy => {
+                            const dist = Math.hypot(enemy.x - this.target.x, enemy.y - this.target.y);
+                            if (dist <= this.splashRadius) {
+                                enemy.health -= this.damage * (1 - dist / this.splashRadius);
+                            }
+                        });
+                    } else {
+                        this.target.health -= this.damage;
+                    }
+                    this.toRemove = true;
+                } else {
+                    this.x += (dx / distance) * this.speed;
+                    this.y += (dy / distance) * this.speed;
+                }
+            }
+
+            draw(ctx) {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, 5, 0, Math.PI * 2);
+                ctx.fillStyle = this.splash ? '#9C27B0' : '#FFF';
+                ctx.fill();
+            }
+        }
+
+        const game = new Game();
+    </script>
+</body>
+</html>
