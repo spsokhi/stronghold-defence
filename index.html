@@ -5,19 +5,30 @@
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
-            padding: 20px;
             background: #0d1117;
             color: #e6edf3;
             font-family: 'Segoe UI', Arial, sans-serif;
-            display: flex;
-            justify-content: center;
+            overflow: hidden;
+            height: 100vh;
         }
-        #gameContainer { display: flex; gap: 14px; align-items: flex-start; }
-        #gameCanvas { border: 2px solid #30363d; border-radius: 6px; cursor: crosshair; flex-shrink: 0; }
+        #gameContainer {
+            display: flex;
+            gap: 12px;
+            align-items: flex-start;
+            padding: 12px;
+            height: 100vh;
+            overflow: hidden;
+        }
+        #gameCanvas {
+            border: 2px solid #30363d;
+            border-radius: 6px;
+            cursor: crosshair;
+            flex-shrink: 0;
+        }
 
         #sidebar {
             width: 228px;
-            max-height: 640px;
+            max-height: calc(100vh - 24px);
             overflow-y: auto;
             display: flex;
             flex-direction: column;
@@ -584,8 +595,9 @@ class Enemy {
 // ─── GAME ─────────────────────────────────────────────────────────────────────
 class Game {
     constructor() {
-        this.canvas = document.getElementById('gameCanvas');
-        this.ctx    = this.canvas.getContext('2d');
+        this.canvas    = document.getElementById('gameCanvas');
+        this.ctx       = this.canvas.getContext('2d');
+        this.drawScale = 1;
 
         this.phase     = 'select';
         this.diff      = null;
@@ -635,8 +647,33 @@ class Game {
         this._renderIcons();
         this._renderLegend();
         this._bindUI();
+        this._resize();
+        window.addEventListener('resize', () => this._resize());
         document.getElementById('hs').textContent = getHS();
         this._loop();
+    }
+
+    // ─── Resize ───────────────────────────────────────────────────────────
+    _resize() {
+        const padding  = 24;
+        const sidebarW = 228 + 12;
+        const availW   = window.innerWidth  - sidebarW - padding;
+        const availH   = window.innerHeight - padding;
+        const scale    = Math.min(availW / 800, availH / 600);
+        const dpr      = window.devicePixelRatio || 1;
+
+        // CSS display size
+        const cssW = Math.floor(800 * scale);
+        const cssH = Math.floor(600 * scale);
+        this.canvas.style.width  = cssW + 'px';
+        this.canvas.style.height = cssH + 'px';
+
+        // Actual pixel buffer — match display size × DPR for crisp rendering
+        this.canvas.width  = Math.floor(cssW * dpr);
+        this.canvas.height = Math.floor(cssH * dpr);
+
+        // Scale factor applied each frame so game logic stays in 800×600 space
+        this.drawScale = scale * dpr;
     }
 
     // ─── Setup ────────────────────────────────────────────────────────────
@@ -671,7 +708,8 @@ class Game {
 
         this.canvas.addEventListener('click', e => {
             const r = this.canvas.getBoundingClientRect();
-            this._onClick(e.clientX - r.left, e.clientY - r.top);
+            const sx = 800 / r.width, sy = 600 / r.height;
+            this._onClick((e.clientX - r.left) * sx, (e.clientY - r.top) * sy);
         });
         this.canvas.addEventListener('contextmenu', e => {
             e.preventDefault();
@@ -681,8 +719,9 @@ class Game {
         });
         this.canvas.addEventListener('mousemove', e => {
             if (this.phase !== 'playing') return;
-            const r = this.canvas.getBoundingClientRect();
-            const mx = e.clientX - r.left, my = e.clientY - r.top;
+            const r  = this.canvas.getBoundingClientRect();
+            const sx = 800 / r.width, sy = 600 / r.height;
+            const mx = (e.clientX - r.left) * sx, my = (e.clientY - r.top) * sy;
             this.hovSpot  = this.spots.find(s => !this._occ(s) && Math.hypot(s.x - mx, s.y - my) < 26) || null;
             this.hovTower = this.towers.find(t => Math.hypot(t.x - mx, t.y - my) < 22) || null;
         });
@@ -1113,7 +1152,11 @@ class Game {
         const ctx = this.ctx;
 
         if (this.phase === 'select') {
+            ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+            ctx.save();
+            ctx.scale(this.drawScale, this.drawScale);
             this._drawSelectScreen();
+            ctx.restore();
             requestAnimationFrame(() => this._loop());
             return;
         }
@@ -1123,8 +1166,10 @@ class Game {
             for (let i = 0; i < steps; i++) this._update();
         }
 
-        // Draw with optional screen shake
+        // Apply scale so all drawing uses 800×600 coordinate space
+        ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
         ctx.save();
+        ctx.scale(this.drawScale, this.drawScale);
         if (this.shake > 0) {
             ctx.translate((Math.random() - 0.5) * this.shake, (Math.random() - 0.5) * this.shake);
         }
@@ -1136,9 +1181,8 @@ class Game {
         this.enemies.forEach(e => e.draw(ctx));
         this.particles.forEach(p => p.draw(ctx));
         this.floaters.forEach(f => f.draw(ctx));
-        ctx.restore();
-
         if (this.over || this.won) this._drawEndScreen();
+        ctx.restore();
 
         this._updateProgress();
         requestAnimationFrame(() => this._loop());
